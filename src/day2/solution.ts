@@ -1,4 +1,4 @@
-import { input, testInput } from './input.js'
+import { input } from './input.js'
 
 const GAME_PREFIX = 'Game '
 
@@ -137,3 +137,6 @@ function secondSolution (input: string): number {
 
   return gamePowers.reduce((sum, power) => sum + power, 0)
 }
+
+firstSolution(input)
+secondSolution(input)
