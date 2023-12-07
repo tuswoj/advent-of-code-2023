@@ -1,25 +1,49 @@
 import { input } from './input.js'
 
-interface Item {
-  x: number
-  y: number
-  index: number
-  isSymbol: boolean
-  isDot: boolean
-  isDigit: boolean
-  value: string
-  isAdjacentToSymbol: boolean
-  adjacentSymbolItems: string[]
+class SchemaItem {
+  public value: string
+  public index: number
+
+  constructor (value: string, index: number) {
+    this.value = value
+    this.index = index
+  }
+
+  public isDigit (): boolean {
+    const digitRegex = /\d/
+
+    return digitRegex.test(this.value)
+  }
+
+  public isDot (): boolean {
+    return this.value === '.'
+  }
+
+  public isGearSymbol (): boolean {
+    return this.value === '*'
+  }
+
+  public isSymbol (): boolean {
+    return !this.isDigit() && !this.isDot()
+  }
+
+  public isAdjacentToSymbol (schema: Schema): boolean {
+    return schema.findAdjacentItems(this).some(item => item?.isSymbol())
+  }
+
+  public isAdjacentToDigit (schema: Schema): boolean {
+    return schema.findAdjacentItems(this).some(item => item?.isDigit())
+  }
 }
 
 class Schema {
-  items: Item[]
+  items: SchemaItem[]
   length: number
   height: number
 
   constructor (input: string) {
     const inputRows = input.split('\n')
-    const items: Item[] = []
+    const items: SchemaItem[] = []
     this.height = inputRows.length
     this.length = inputRows[0].length
 
@@ -27,52 +51,43 @@ class Schema {
       const elements = row.split('')
 
       elements.forEach((item, itemIndex) => {
-        items.push(createItem(item, itemIndex, rowIndex, itemIndex + rowIndex * this.length))
+        const index = rowIndex * this.length + itemIndex
+        items.push(new SchemaItem(item, index))
       })
     })
 
-    this.items = items.map(item => {
-      item.adjacentSymbolItems = getItemsAdjacentToSymbol(item, items, this.length, this.height)
-      item.isAdjacentToSymbol = item.adjacentSymbolItems.length > 0
+    this.items = items
+  }
 
-      return item
-    })
+  public findAdjacentItems (item: SchemaItem): SchemaItem[] {
+    const { length } = this
+    const { index } = item
+    const items = this.items
+
+    return [
+      items?.[index - length - 1],
+      items?.[index - length],
+      items?.[index - length + 1],
+      items?.[index - 1],
+      items?.[index + 1],
+      items?.[index + length - 1],
+      items?.[index + length],
+      items?.[index + length + 1]
+    ]
   }
 }
 
-function getItemsAdjacentToSymbol (item: Item, items: Item[], length: number, height: number): string[] {
-  const { isDot, isSymbol, index } = item
-
-  if (isDot || isSymbol) {
-    return []
-  }
-
-  return [items[index - length - 1],
-    items[index - length],
-    items[index - length + 1],
-    items[index - 1],
-    items[index + 1],
-    items[index + length - 1],
-    items[index + length],
-    items[index + length + 1]].filter(item => {
-    if (typeof item !== 'undefined') {
-      return item.isSymbol
-    }
-
-    return false
-  }).map(({ value }) => value)
-}
-
-function getNumbersFromAdjacentSymbols (items: Item[]): number[] {
+function getNumbersFromAdjacentSymbols (schema: Schema): number[] {
   const numberStrings: string[] = []
+  const items = schema.items
 
   let currentNumberString = ''
   let currentNumberStringIsAdjacent = false
 
   items.forEach(item => {
-    const { isDigit, isSymbol, isDot, value, isAdjacentToSymbol } = item
+    const isDigit = item.isDigit()
 
-    const notNumber = isSymbol || isDot
+    const notNumber = !isDigit
     const currentStringNotEmpty = currentNumberString.length > 0
 
     // We just left the number string
@@ -86,10 +101,10 @@ function getNumbersFromAdjacentSymbols (items: Item[]): number[] {
     }
 
     if (isDigit) {
-      currentNumberString += value
+      currentNumberString += item.value
     }
 
-    if (isDigit && isAdjacentToSymbol) {
+    if (isDigit && item.isAdjacentToSymbol(schema)) {
       currentNumberStringIsAdjacent = true
     }
   })
@@ -97,40 +112,90 @@ function getNumbersFromAdjacentSymbols (items: Item[]): number[] {
   return numberStrings.map(numstr => Number(numstr))
 }
 
-function createItem (item: string, x: number, y: number, index: number): Item {
-  return {
-    x,
-    y,
-    isDigit: isDigit(item),
-    index,
-    isSymbol: isSymbol(item),
-    isDot: isDot(item),
-    value: item,
-    isAdjacentToSymbol: false,
-    adjacentSymbolItems: []
+function getGearRatio (schema: Schema): number {
+  const items = schema.items
+
+  const gearsAdjacentToDigits = items
+    .filter((item) => item.isGearSymbol())
+    .filter(item => item.isAdjacentToDigit(schema))
+
+  const adjacentnums = gearsAdjacentToDigits
+    .map(item => getAdjacentNumbers(item, schema))
+
+  return adjacentnums
+    .filter(numArray => numArray.length === 2)
+    .map(([a, b]) => a * b)
+    .reduce((sum, num) => sum + num, 0)
+}
+
+function getAdjacentNumbers (item: SchemaItem, schema: Schema): number[] {
+  const items = schema.items
+  const numbers = []
+
+  const adjacentDigits = schema.findAdjacentItems(item).filter(item => item.isDigit())
+
+  let availableDigits = [...adjacentDigits]
+
+  let currentNumberString = ''
+
+  for (let i = 0; i <= adjacentDigits.length; i++) {
+    const digit = adjacentDigits[i]
+
+    if (digit === undefined) {
+      break
+    }
+
+    if ((availableDigits.findIndex(({ index }) => index === digit?.index)) === -1) {
+      // We have already visited this item
+      continue
+    }
+
+    // loop to the left
+    let currentLeftItem = digit
+    let nextLeftItem = items?.[currentLeftItem.index - 1]
+
+    while (nextLeftItem?.isDigit()) {
+      currentNumberString = nextLeftItem.value + currentNumberString
+      currentLeftItem = nextLeftItem
+      availableDigits = availableDigits.filter(({ index }) => index !== currentLeftItem.index)
+      nextLeftItem = items?.[currentLeftItem.index - 1]
+    }
+
+    currentNumberString += digit.value
+
+    // loop to the right
+    let currentRight = digit
+    let nextRightItem = items?.[currentRight.index + 1]
+
+    while (nextRightItem?.isDigit()) {
+      currentNumberString += nextRightItem.value
+      currentRight = nextRightItem
+      availableDigits = availableDigits.filter(({ index }) => index !== currentRight.index)
+      nextRightItem = items?.[currentRight.index + 1]
+    }
+
+    numbers.push(Number(currentNumberString))
+
+    currentNumberString = ''
   }
-}
 
-function isDigit (input: string): boolean {
-  const digitRegex = /\d/
-
-  return digitRegex.test(input)
-}
-
-function isDot (input: string): boolean {
-  return input === '.'
-}
-
-function isSymbol (input: string): boolean {
-  return !isDigit(input) && !isDot(input)
+  return numbers
 }
 
 function firstSoultion (input: string): number {
   const schema = new Schema(input)
 
-  const numbers = getNumbersFromAdjacentSymbols(schema.items)
+  const numbers = getNumbersFromAdjacentSymbols(schema)
 
   return numbers.reduce((sum, num) => sum + num, 0)
 }
 
-console.log(firstSoultion(input))
+function secondSolution (input: string): number {
+  const schema = new Schema(input)
+
+  return getGearRatio(schema)
+}
+
+console.log('First solution:', firstSoultion(input))
+
+console.log('Second solution:', secondSolution(input))
