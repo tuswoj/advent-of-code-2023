@@ -2,3 +2,5 @@ dist
 node_modules
 
 **/input.js
+**/input.txt
+**/testInput.txt
